@@ -32,6 +32,7 @@
 //#include "phylotreemixlen.h"
 //#include "model/modelfactorymixlen.h"
 #include <numeric>
+#include <cstdlib>
 #include "utils/tools.h"
 #include "utils/MPIHelper.h"
 #include "utils/pllnni.h"
@@ -2993,10 +2994,28 @@ pair<int, int> IQTree::doNNISearch(bool write_info) {
     return nniInfos;
 }
 
+/* --- EPIC #369 stage-4 instrumentation ------------------------------------
+ * Measures the post-accept NNI verification at optimizeNNI()'s line ~3110.
+ * OFF unless IQTREE_I369 is set in the environment. Emissions go to cerr, so
+ * .log / .iqtree / .treefile stay byte-identical to a stock build. Only reads
+ * values the search has already computed: no extra likelihood evaluation, no
+ * partial-lh or cache touches, and totalNNIApplied is deliberately unchanged
+ * so every pre-existing number stays comparable.
+ */
+static inline bool i369_on() {
+    static const bool on = (getenv("IQTREE_I369") != NULL);
+    return on;
+}
+
 pair<int, int> IQTree::optimizeNNI(bool speedNNI) {
     unsigned int totalNNIApplied = 0;
     unsigned int numSteps = 0;
     const int MAXSTEPS = leafNum;
+    // EPIC #369: de-aliased counters. totalNNIApplied cannot distinguish
+    // "committed N" from "tripped and fell back to 1"; these can.
+    unsigned int i369_trips_multi = 0;   // check tripped, appliedNNIs.size() > 1 -> reverted to best
+    unsigned int i369_trips_single = 0;  // check tripped, size == 1 -> nothing done but the ASSERT
+    unsigned int i369_rounds = 0;
 //    unsigned int numInnerBranches = leafNum - 3;
     double curBestScore = candidateTrees.getBestScore();
 
@@ -3107,8 +3126,24 @@ pair<int, int> IQTree::optimizeNNI(bool speedNNI) {
         doNNIs(appliedNNIs);
         curScore = optimizeAllBranches(1, params->loglh_epsilon, PLL_NEWZPERCYCLE);
 
+        // EPIC #369: capture the committed-set size BEFORE the check, because
+        // the fallback path resizes appliedNNIs to 1.
+        const size_t i369_N = appliedNNIs.size();
+        const double i369_pred0 = appliedNNIs.at(0).newloglh;
+        const double i369_cur_pre = curScore;
+        i369_rounds++;
+
         if (curScore < appliedNNIs.at(0).newloglh - params->loglh_epsilon) {
-            //cout << "Tree getting worse: curScore = " << curScore << " / best score = " <<  appliedNNIs.at(0).newloglh << endl;
+            // EPIC #369 item 1: this is the content of the line that shipped
+            // commented out at this exact spot.
+            if (i369_on())
+                cerr << "[I369] TRIP round=" << numSteps << " N=" << i369_N
+                     << " Tree getting worse: curScore = " << i369_cur_pre
+                     << " / best score = " << i369_pred0
+                     << " delta=" << (i369_cur_pre - i369_pred0)
+                     << " eps=" << params->loglh_epsilon
+                     << " assert_margin=" << (i369_cur_pre - (i369_pred0 - 0.1))
+                     << endl;
             // tree cannot be worse if only 1 NNI is applied
             if (appliedNNIs.size() > 1) {
                 // revert all applied NNIs
@@ -3119,13 +3154,30 @@ pair<int, int> IQTree::optimizeNNI(bool speedNNI) {
                 appliedNNIs.resize(1);
                 doNNIs(appliedNNIs);
                 curScore = optimizeAllBranches(1, params->loglh_epsilon, PLL_NEWZPERCYCLE);
+                if (i369_on())
+                    cerr << "[I369] FALLBACK round=" << numSteps << " N=" << i369_N
+                         << " curScore_after=" << curScore
+                         << " pred0=" << i369_pred0
+                         << " delta_after=" << (curScore - i369_pred0) << endl;
+                i369_trips_multi++;
                 ASSERT(curScore > appliedNNIs.at(0).newloglh - 0.1);
-            } else
+            } else {
+                i369_trips_single++;
                 ASSERT(curScore > appliedNNIs.at(0).newloglh - 0.1 && "Using one NNI reduces LogL");
+            }
             totalNNIApplied++;
         } else {
             totalNNIApplied += appliedNNIs.size();
         }
+
+        // EPIC #369 item 2: per-round committed-set size, so N becomes a
+        // distribution rather than a description.
+        if (i369_on())
+            cerr << "[I369] ROUND round=" << numSteps << " N=" << i369_N
+                 << " outcome=" << (i369_cur_pre < i369_pred0 - params->loglh_epsilon
+                                    ? (i369_N > 1 ? "trip_fallback" : "trip_single") : "ok")
+                 << " curScore=" << curScore
+                 << " pred0=" << i369_pred0 << endl;
 
         if(curScore < oldScore - params->loglh_epsilon){
             hideProgress();
@@ -3163,6 +3215,14 @@ pair<int, int> IQTree::optimizeNNI(bool speedNNI) {
         cout << "AAAAAAAAAAAAAAAAAAA: " << curScore << "\t" << originalScore << "\t" << curScore - originalScore << endl;
 
     }
+    if (i369_on())
+        cerr << "[I369] SUMMARY rounds=" << i369_rounds
+             << " trips_multi=" << i369_trips_multi
+             << " trips_single=" << i369_trips_single
+             << " totalNNIApplied=" << totalNNIApplied
+             << " numSteps=" << numSteps
+             << " MAXSTEPS=" << MAXSTEPS << endl;
+
     return make_pair(numSteps, totalNNIApplied);
 }
 
