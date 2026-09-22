@@ -10,6 +10,7 @@
 //
 //
 #include "phylonode.h"
+#include "utils/i369.h"
 
 
 void PhyloNeighbor::clearForwardPartialLh(Node *dad) {
@@ -34,6 +35,7 @@ void PhyloNode::clearReversePartialLh(PhyloNode *dad) {
 
 void PhyloNode::clearAllPartialLh(bool make_null, PhyloNode* dad) {
 	PhyloNeighbor* node_nei = (PhyloNeighbor*)findNeighbor(dad);
+	if (i369_enabled) { i369c.inval_blanket_slots++; if (node_nei->partial_lh_computed) i369c.inval_blanket_valid++; }
 	node_nei->partial_lh_computed = 0;
 	if (make_null) node_nei->partial_lh = NULL;
 
@@ -42,6 +44,7 @@ void PhyloNode::clearAllPartialLh(bool make_null, PhyloNode* dad) {
 		node_nei->size = 0;
 
 	node_nei = (PhyloNeighbor*)dad->findNeighbor(this);
+	if (i369_enabled) { i369c.inval_blanket_slots++; if (node_nei->partial_lh_computed) i369c.inval_blanket_valid++; }
 	node_nei->partial_lh_computed = 0;
 	if (make_null) {
 		node_nei->partial_lh = NULL;

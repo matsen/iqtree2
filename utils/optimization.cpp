@@ -10,6 +10,7 @@
 //
 //
 #include "optimization.h"
+#include "i369.h"
 #include <cmath>
 #include <stdio.h>
 #include <stdlib.h>
@@ -425,6 +426,7 @@ double Optimization::minimizeNewton(double x1, double xguess, double x2, double 
 	double df,dx,dxold,f;
 	double temp,xh,xl,rts, rts_old, xinit;
 
+	if (i369_enabled) i369c.nr_calls++;
 	rts = xguess;
 	if (rts < x1) rts = x1;
 	if (rts > x2) rts = x2;
@@ -435,7 +437,7 @@ double Optimization::minimizeNewton(double x1, double xguess, double x2, double 
 	if (!isfinite(f) || !isfinite(df)) {
 		nrerror("Wrong computeFuncDerv");
 	}
-	if (df >= 0.0 && fabs(f) < xacc) return rts;
+	if (df >= 0.0 && fabs(f) < xacc) { i369_nr_done(0, i369c.nr_exit_immediate); return rts; }
 	if (f < 0.0) {
 		xl = rts;
 		xh = x2;
@@ -457,16 +459,18 @@ double Optimization::minimizeNewton(double x1, double xguess, double x2, double 
 			dx=0.5*(xh-xl);
 			rts=xl+dx;
             d2l = df;
-			if (xl == rts) return rts;
+			if (xl == rts) { i369_nr_done(j, i369c.nr_exit_bisect_collapse); return rts; }
 		} else {
 			dxold=dx;
 			dx=f/df;
 			temp=rts;
 			rts -= dx;
 			d2l = df;
-			if (temp == rts) return rts;
+			if (temp == rts) { i369_nr_done(j, i369c.nr_exit_step_collapse); return rts; }
 		}
 		if (fabs(dx) < xacc || (j == maxNRStep)) {
+			/* split the two conditions the shipped code conflates */
+			i369_nr_done(j, (fabs(dx) < xacc) ? i369c.nr_exit_dx : i369c.nr_exit_cap);
 //			if (fm > finit) {
 //				// happen in rare cases that it is worse than starting point: revert init value
 //				fm = computeFunction(xinit);
@@ -480,6 +484,7 @@ double Optimization::minimizeNewton(double x1, double xguess, double x2, double 
         computeFuncDerv(rts,f,df);
 		if (!isfinite(f) || !isfinite(df)) nrerror("Wrong computeFuncDerv");
 		if (df > 0.0 && fabs(f) < xacc) {
+			i369_nr_done(j, i369c.nr_exit_grad);
 			d2l = df;
 //			if (fm > finit) {
 //				// happen in rare cases that it is worse than starting point: revert init value

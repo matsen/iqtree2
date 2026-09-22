@@ -23,6 +23,10 @@
 
 
 #include "tools.h"
+#include "i369.h"
+
+I369Counters i369c = {};
+bool i369_enabled = (getenv("IQTREE_I369") != NULL);
 #include "starttree.h" //for START_TREE_RECOGNIZED macro.
 #include "timeutil.h"
 #include "MPIHelper.h"

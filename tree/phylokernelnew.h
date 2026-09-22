@@ -18,6 +18,7 @@
 #endif
 
 #include "phylotree.h"
+#include "utils/i369.h"
 
 #ifdef _OPENMP
 #include <omp.h>
@@ -940,6 +941,7 @@ void PhyloTree::computePartialInfo(TraversalInfo &info, VectorClass* buffer, dou
                 double mat[nstatesqr];
                 for (c = 0; c < ncat_mix; c++) {
                     double len_child = site_rate->getRate(c%ncat) * child->length;
+                    if (i369_enabled) i369c.transmat++;   /* EPIC #369 E */
                     model_factory->computeTransMatrix(len_child, mat, c/denom);
                     double *echild_ptr = &echild[c*nstatesqr];
                     for (i = 0; i < nstates; i++) {
@@ -951,6 +953,7 @@ void PhyloTree::computePartialInfo(TraversalInfo &info, VectorClass* buffer, dou
             } else {
                 for (c = 0; c < ncat_mix; c++) {
                     double len_child = site_rate->getRate(c%ncat) * child->length;
+                    if (i369_enabled) i369c.transmat++;   /* EPIC #369 E */
                     model_factory->computeTransMatrix(len_child, &echild[c*nstatesqr], c/denom);
                 }
             }

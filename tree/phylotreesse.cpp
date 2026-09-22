@@ -18,6 +18,7 @@
  *   59 Temple Place - Suite 330, Boston, MA  02111-1307, USA.             *
  ***************************************************************************/
 #include "phylotree.h"
+#include "utils/i369.h"
 #include "vectorclass/instrset.h"
 
 #if INSTRSET < 2
@@ -210,15 +211,18 @@ void PhyloTree::changeLikelihoodKernel(LikelihoodKernel lk) {
  ******************************************************/
 
 void PhyloTree::computePartialLikelihood(TraversalInfo &info, size_t ptn_left, size_t ptn_right, int packet_id) {
+	if (i369_enabled) i369c.clv_partial++;   /* EPIC #369 A */
 	(this->*computePartialLikelihoodPointer)(info, ptn_left, ptn_right, packet_id);
 }
 
 double PhyloTree::computeLikelihoodBranch(PhyloNeighbor *dad_branch, PhyloNode *dad, bool save_log_value) {
+	if (i369_enabled) i369c.lk_branch++;     /* EPIC #369 D */
 	return (this->*computeLikelihoodBranchPointer)(dad_branch, dad, save_log_value);
 
 }
 
 void PhyloTree::computeLikelihoodDerv(PhyloNeighbor *dad_branch, PhyloNode *dad, double *df, double *ddf) {
+	if (i369_enabled) i369c.lk_derv++;       /* EPIC #369 C (Newton objective) */
 	(this->*computeLikelihoodDervPointer)(dad_branch, dad, df, ddf);
 }
 
@@ -227,9 +231,12 @@ double PhyloTree::computeLikelihoodFromBuffer() {
 	ASSERT(current_it && current_it_back);
 
     // TODO: buffer stuff for mixlen model
-	if (computeLikelihoodFromBufferPointer && optimize_by_newton)
+	if (i369_enabled) i369c.lk_frombuffer++; /* EPIC #369 F */
+	if (computeLikelihoodFromBufferPointer && optimize_by_newton) {
+		if (i369_enabled) i369c.lk_frombuffer_fast++;
 		return (this->*computeLikelihoodFromBufferPointer)();
-	else {
+	} else {
+		if (i369_enabled) i369c.lk_frombuffer_fallback++;
 		return (this->*computeLikelihoodBranchPointer)(current_it, (PhyloNode*)current_it_back->node, true);
     }
 

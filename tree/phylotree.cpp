@@ -20,6 +20,7 @@
  *   59 Temple Place - Suite 330, Boston, MA  02111-1307, USA.             *
  ***************************************************************************/
 #include "phylotree.h"
+#include "utils/i369.h"
 #include "utils/starttree.h"
 #include "utils/progress.h"  //for progress_display
 //#include "rateheterogeneity.h"
@@ -669,6 +670,7 @@ void PhyloTree::clearAllPartialLH(bool make_null) {
     if (!root) {
         return;
     }
+    if (i369_enabled) i369c.inval_blanket_calls++;
     ((PhyloNode*) root->neighbors[0]->node)->clearAllPartialLh(make_null, (PhyloNode*) root);
     tip_partial_lh_computed = 0;
     // 2015-10-14: has to reset this pointer when read in
@@ -1231,6 +1233,7 @@ Node *findFirstFarLeaf(Node *node, Node *dad = NULL) {
 }
 
 double PhyloTree::computeLikelihood(double *pattern_lh, bool save_log_value) {
+    if (i369_enabled) i369c.lk_full++;        /* EPIC #369 D (wrapper) */
     ASSERT(model);
     ASSERT(site_rate);
     ASSERT(root->isLeaf());
@@ -2592,6 +2595,7 @@ int PhyloTree::getNBranchParameters(int brlen_type) {
 }
 
 void PhyloTree::optimizeOneBranch(PhyloNode *node1, PhyloNode *node2, bool clearLH, int maxNRStep) {
+    if (i369_enabled) i369c.bl_one++;
 
     if (rooted && (node1 == root || node2 == root))
         return; // does not optimize virtual branch from root
@@ -2696,6 +2700,7 @@ void PhyloTree::computeBestTraversal(NodeVector &nodes, NodeVector &nodes2) {
 }
 
 double PhyloTree::optimizeAllBranches(int my_iterations, double tolerance, int maxNRStep) {
+    if (i369_enabled) i369c.bl_all++;
     if (verbose_mode >= VB_MAX) {
         cout << "Optimizing branch lengths (max " << my_iterations << " loops)..." << endl;
     }
@@ -2715,6 +2720,7 @@ double PhyloTree::optimizeAllBranches(int my_iterations, double tolerance, int m
 //            printTree(cout, WT_BR_LEN+WT_NEWLINE);
 //        }
 
+        if (i369_enabled) { i369c.bl_sweeps++; i369c.bl_branch_visits += nodes.size(); }
         for (int j = 0; j < nodes.size(); j++) {
             optimizeOneBranch((PhyloNode*)nodes[j], (PhyloNode*)nodes2[j]);
             if (verbose_mode >= VB_MAX) {
@@ -5896,6 +5902,7 @@ void PhyloTree::forceConvertingToUnrooted()
 }
 
 void PhyloTree::reorientPartialLh(PhyloNeighbor* dad_branch, Node *dad) {
+    if (i369_enabled) i369c.reorient++;       /* EPIC #369 B-candidate */
     ASSERT(!isSuperTree());
     if (dad_branch->partial_lh)
         return;

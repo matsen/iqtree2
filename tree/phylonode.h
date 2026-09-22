@@ -13,6 +13,7 @@
 #define PHYLONODE_H
 
 #include "node.h"
+#include "utils/i369.h"
 
 typedef unsigned short UBYTE;
 
@@ -97,6 +98,7 @@ public:
         tell that the partial likelihood vector is not computed
      */
     inline void clearPartialLh() {
+        if (i369_enabled) { i369c.inval_target_calls++; if (partial_lh_computed) i369c.inval_target_valid++; }
         partial_lh_computed = 0;
     }
 

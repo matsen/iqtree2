@@ -18,6 +18,7 @@
  *   59 Temple Place - Suite 330, Boston, MA  02111-1307, USA.             *
  ***************************************************************************/
 #include "modelmarkov.h"
+#include "utils/i369.h"
 #include <stdlib.h>
 #include <string.h>
 #include "modelliemarkov.h"
@@ -1387,6 +1388,7 @@ void ModelMarkov::decomposeRateMatrixNonrev() {
 }
 
 void ModelMarkov::decomposeRateMatrix(){
+    if (i369_enabled) i369c.eigen_decomp++;   /* EPIC #369 E (real precompute) */
 	int i, j, k = 0;
 
     if (!is_reversible) {

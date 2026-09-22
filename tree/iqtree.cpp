@@ -33,6 +33,7 @@
 //#include "model/modelfactorymixlen.h"
 #include <numeric>
 #include <cstdlib>
+#include "utils/i369.h"
 #include <fstream>
 #include "utils/tools.h"
 #include "utils/MPIHelper.h"
@@ -3004,8 +3005,43 @@ pair<int, int> IQTree::doNNISearch(bool write_info) {
  * so every pre-existing number stays comparable.
  */
 static inline bool i369_on() {
-    static const bool on = (getenv("IQTREE_I369") != NULL);
-    return on;
+    return i369_enabled;
+}
+
+/* Per-round operation deltas. Snapshot at round start, difference at round end,
+ * so each line is that round's own cost and rounds are independent. */
+#define I369D(f) (i369c.f - snap.f)
+static void i369_emit_ops(ostream &os, const char *tag, unsigned int round,
+                          const I369Counters &snap) {
+    os << "[I369] " << tag << " round=" << round
+       << " A_clv=" << I369D(clv_partial)
+       << " B_reorient=" << I369D(reorient)
+       << " C_lk_derv=" << I369D(lk_derv)
+       << " D_lk_branch=" << I369D(lk_branch)
+       << " D_lk_full=" << I369D(lk_full)
+       << " E_transmat=" << I369D(transmat)
+       << " E_eigen=" << I369D(eigen_decomp)
+       << " F_frombuf=" << I369D(lk_frombuffer)
+       << " F_fast=" << I369D(lk_frombuffer_fast)
+       << " F_fallback=" << I369D(lk_frombuffer_fallback)
+       << " bl_all=" << I369D(bl_all)
+       << " bl_sweeps=" << I369D(bl_sweeps)
+       << " bl_visits=" << I369D(bl_branch_visits)
+       << " bl_one=" << I369D(bl_one)
+       << " nr_calls=" << I369D(nr_calls)
+       << " nr_iters=" << I369D(nr_iters)
+       << " nr_imm=" << I369D(nr_exit_immediate)
+       << " nr_grad=" << I369D(nr_exit_grad)
+       << " nr_dx=" << I369D(nr_exit_dx)
+       << " nr_cap=" << I369D(nr_exit_cap)
+       << " nr_bisect=" << I369D(nr_exit_bisect_collapse)
+       << " nr_step=" << I369D(nr_exit_step_collapse)
+       << " inv_blanket_calls=" << I369D(inval_blanket_calls)
+       << " inv_blanket_slots=" << I369D(inval_blanket_slots)
+       << " inv_blanket_valid=" << I369D(inval_blanket_valid)
+       << " inv_target_calls=" << I369D(inval_target_calls)
+       << " inv_target_valid=" << I369D(inval_target_valid)
+       << endl;
 }
 
 /* Emissions go to the file named by IQTREE_I369, NOT to cout or cerr:
@@ -3054,6 +3090,7 @@ pair<int, int> IQTree::optimizeNNI(bool speedNNI) {
 
 //        cout << "numSteps = " << numSteps << endl;
         double oldScore = curScore;
+        const I369Counters snap = i369c;   /* EPIC #369: per-round op deltas */
         if (save_all_trees == 2) {
             saveCurrentTree(curScore); // BQM: for new bootstrap
         }
@@ -3195,6 +3232,8 @@ pair<int, int> IQTree::optimizeNNI(bool speedNNI) {
                                     ? (i369_N > 1 ? "trip_fallback" : "trip_single") : "ok")
                  << " curScore=" << curScore
                  << " pred0=" << i369_pred0 << endl;
+        if (i369_on())
+            i369_emit_ops(i369_out(), "OPS", numSteps, snap);
 
         if(curScore < oldScore - params->loglh_epsilon){
             hideProgress();
@@ -3231,6 +3270,13 @@ pair<int, int> IQTree::optimizeNNI(bool speedNNI) {
     if(curScore < originalScore - params->loglh_epsilon){
         cout << "AAAAAAAAAAAAAAAAAAA: " << curScore << "\t" << originalScore << "\t" << curScore - originalScore << endl;
 
+    }
+    if (i369_on()) {
+        static const I369Counters zero = {};
+        i369_emit_ops(i369_out(), "TOTALS", numSteps, zero);
+        i369_out() << "[I369] NRHIST";
+        for (int h = 0; h < 12; h++) i369_out() << " " << h << ":" << i369c.nr_hist[h];
+        i369_out() << endl;
     }
     if (i369_on())
         i369_out() << "[I369] SUMMARY rounds=" << i369_rounds
