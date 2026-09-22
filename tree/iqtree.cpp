@@ -33,6 +33,7 @@
 //#include "model/modelfactorymixlen.h"
 #include <numeric>
 #include <cstdlib>
+#include <fstream>
 #include "utils/tools.h"
 #include "utils/MPIHelper.h"
 #include "utils/pllnni.h"
@@ -3007,6 +3008,22 @@ static inline bool i369_on() {
     return on;
 }
 
+/* Emissions go to the file named by IQTREE_I369, NOT to cout or cerr:
+ * cout would enter the .log, and the matched-cell harness voids any cell
+ * where IQ-TREE writes a single byte to stderr (run_cell.py's
+ * "iqtree_stderr_nonempty"). A separate file leaves both channels untouched.
+ */
+static ostream& i369_out() {
+    static ofstream f;
+    static bool tried = false;
+    if (!tried) {
+        tried = true;
+        const char *path = getenv("IQTREE_I369");
+        if (path) f.open(path, ios::app);
+    }
+    return f;
+}
+
 pair<int, int> IQTree::optimizeNNI(bool speedNNI) {
     unsigned int totalNNIApplied = 0;
     unsigned int numSteps = 0;
@@ -3137,7 +3154,7 @@ pair<int, int> IQTree::optimizeNNI(bool speedNNI) {
             // EPIC #369 item 1: this is the content of the line that shipped
             // commented out at this exact spot.
             if (i369_on())
-                cerr << "[I369] TRIP round=" << numSteps << " N=" << i369_N
+                i369_out() << "[I369] TRIP round=" << numSteps << " N=" << i369_N
                      << " Tree getting worse: curScore = " << i369_cur_pre
                      << " / best score = " << i369_pred0
                      << " delta=" << (i369_cur_pre - i369_pred0)
@@ -3155,7 +3172,7 @@ pair<int, int> IQTree::optimizeNNI(bool speedNNI) {
                 doNNIs(appliedNNIs);
                 curScore = optimizeAllBranches(1, params->loglh_epsilon, PLL_NEWZPERCYCLE);
                 if (i369_on())
-                    cerr << "[I369] FALLBACK round=" << numSteps << " N=" << i369_N
+                    i369_out() << "[I369] FALLBACK round=" << numSteps << " N=" << i369_N
                          << " curScore_after=" << curScore
                          << " pred0=" << i369_pred0
                          << " delta_after=" << (curScore - i369_pred0) << endl;
@@ -3173,7 +3190,7 @@ pair<int, int> IQTree::optimizeNNI(bool speedNNI) {
         // EPIC #369 item 2: per-round committed-set size, so N becomes a
         // distribution rather than a description.
         if (i369_on())
-            cerr << "[I369] ROUND round=" << numSteps << " N=" << i369_N
+            i369_out() << "[I369] ROUND round=" << numSteps << " N=" << i369_N
                  << " outcome=" << (i369_cur_pre < i369_pred0 - params->loglh_epsilon
                                     ? (i369_N > 1 ? "trip_fallback" : "trip_single") : "ok")
                  << " curScore=" << curScore
@@ -3216,7 +3233,7 @@ pair<int, int> IQTree::optimizeNNI(bool speedNNI) {
 
     }
     if (i369_on())
-        cerr << "[I369] SUMMARY rounds=" << i369_rounds
+        i369_out() << "[I369] SUMMARY rounds=" << i369_rounds
              << " trips_multi=" << i369_trips_multi
              << " trips_single=" << i369_trips_single
              << " totalNNIApplied=" << totalNNIApplied
