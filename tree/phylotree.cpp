@@ -5910,6 +5910,7 @@ void PhyloTree::reorientPartialLh(PhyloNeighbor* dad_branch, Node *dad) {
     FOR_NEIGHBOR_IT(node, dad, it) {
         PhyloNeighbor *backnei = (PhyloNeighbor*)(*it)->node->findNeighbor(node);
         if (backnei->partial_lh) {
+            if (i369_enabled) i369c.reorient_takeover++;
             mem_slots.takeover(dad_branch, backnei);
             break;
         }

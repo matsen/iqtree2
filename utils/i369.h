@@ -14,7 +14,8 @@ struct I369Counters {
     /* A: downward/lower CLV at an internal node, one node x one pattern block */
     unsigned long long clv_partial;
     /* B: nearest thing to a distinct upper/root-directed partial */
-    unsigned long long reorient;
+    unsigned long long reorient;          /* calls, most of which early-return */
+    unsigned long long reorient_takeover; /* calls that actually moved a memory slot */
     /* C: one objective-function call inside the per-branch optimiser */
     unsigned long long lk_derv;       /* Newton path: value+1st+2nd derivative */
     unsigned long long lk_function;   /* Brent path: value only */

@@ -3016,6 +3016,7 @@ static void i369_emit_ops(ostream &os, const char *tag, unsigned int round,
     os << "[I369] " << tag << " round=" << round
        << " A_clv=" << I369D(clv_partial)
        << " B_reorient=" << I369D(reorient)
+       << " B_takeover=" << I369D(reorient_takeover)
        << " C_lk_derv=" << I369D(lk_derv)
        << " D_lk_branch=" << I369D(lk_branch)
        << " D_lk_full=" << I369D(lk_full)
