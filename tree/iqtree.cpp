@@ -3061,6 +3061,15 @@ static ostream& i369_out() {
     return f;
 }
 
+/* Issue #2930: one cumulative emission of the EXISTING counters at the end of
+ * the final model/branch-length optimisation, so the post-search reopt phase
+ * is countable as ENDTOTALS minus the last in-search TOTALS. No new counter. */
+void i369_emit_end_totals() {
+    if (!i369_on()) return;
+    static const I369Counters zero = {};
+    i369_emit_ops(i369_out(), "ENDTOTALS", 0, zero);
+}
+
 pair<int, int> IQTree::optimizeNNI(bool speedNNI) {
     unsigned int totalNNIApplied = 0;
     unsigned int numSteps = 0;

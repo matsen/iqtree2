@@ -54,6 +54,9 @@ struct I369Counters {
 extern I369Counters i369c;
 extern bool i369_enabled;
 
+/* Issue #2930: cumulative counters after the final model optimisation. */
+void i369_emit_end_totals();
+
 /* record one completed Newton call: iteration count + which exit fired */
 inline void i369_nr_done(int iters, unsigned long long &reason) {
     if (!i369_enabled) return;

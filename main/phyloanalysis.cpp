@@ -29,6 +29,7 @@
 #include "tree/phylosupertreeplen.h"
 #include "tree/phylosupertreeunlinked.h"
 #include "phyloanalysis.h"
+#include "utils/i369.h"
 #include "alignment/alignment.h"
 #include "alignment/superalignment.h"
 #include "alignment/superalignmentunlinked.h"
@@ -3099,6 +3100,7 @@ void runTreeReconstruction(Params &params, IQTree* &iqtree) {
         }
 
     }
+    i369_emit_end_totals();   /* issue #2930: end of final reopt */
     if (iqtree->isSuperTree()) {
         ((PhyloSuperTree*) iqtree)->computeBranchLengths();
         ((PhyloSuperTree*) iqtree)->printBestPartitionParams((string(params.out_prefix) + ".best_model.nex").c_str());
