@@ -3096,6 +3096,13 @@ pair<int, int> IQTree::optimizeNNI(bool speedNNI) {
 
     initProgress(MAXSTEPS, "Optimizing NNI", "done", "step");
     double originalScore = curScore;
+    /* Issue #2930: cumulative counters on entry, so the search phase is
+     * TOTALS - NNISTART. A round that breaks on "no positive NNIs" exits
+     * before its per-round OPS line, so the sum of OPS lines misses it. */
+    if (i369_on()) {
+        static const I369Counters zero = {};
+        i369_emit_ops(i369_out(), "NNISTART", 0, zero);
+    }
     for (numSteps = 1; numSteps <= MAXSTEPS; numSteps++) {
 
 //        cout << "numSteps = " << numSteps << endl;
