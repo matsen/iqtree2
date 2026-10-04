@@ -34,6 +34,7 @@
 #include <numeric>
 #include <cstdlib>
 #include "utils/i369.h"
+#include "utils/iqtrace.h"
 #include <fstream>
 #include "utils/tools.h"
 #include "utils/MPIHelper.h"
@@ -1659,6 +1660,18 @@ string IQTree::doRandomNNIs(bool storeTabu) {
         if (constraintTree.isCompatible(randNNI)) {
             // only if random NNI satisfies constraintTree
             doNNI(randNNI);
+            if (iqtrace_enabled && iqtrace_st.in_perturb) {
+                /* Issue phyz#3322: node1's side of the new split */
+                vector<string> side_names, side;
+                getTaxaName(side_names, randNNI.node1, randNNI.node2);
+                for (const string &nm : side_names)
+                    if (!nm.empty()) side.push_back(nm);
+                std::sort(side.begin(), side.end());
+                string js;
+                for (size_t i = 0; i < side.size(); i++)
+                    js += (i ? "," : "") + iqtrace_str(side[i]);
+                iqtrace_st.perturb_nnis.push_back(js);
+            }
             if (storeTabu) {
                 Split *sp = getSplit(randNNI.node1, randNNI.node2);
                 Split *tabuSplit = new Split(*sp);
@@ -1672,6 +1685,7 @@ string IQTree::doRandomNNIs(bool storeTabu) {
     }
     if (verbose_mode >= VB_MAX)
         cout << "Tree perturbation: number of random NNI performed = " << cntNNI << endl;
+    if (iqtrace_enabled && iqtrace_st.in_perturb) iqtrace_st.perturb_attempts = cntNNI;
     setAlignment(aln);
     setRootNode(params->root);
 
@@ -2316,7 +2330,26 @@ double IQTree::doTreeSearch() {
         pair<int, int> nniInfos; // <num_NNIs, num_steps>
         nniInfos = doNNISearch();
         curTree = getTreeString();
+        const double iqtrace_best_before = candidateTrees.getBestScore();
+        const double iqtrace_score = curScore;
         int pos = addTreeToCandidateSet(curTree, curScore, true, MPIHelper::getInstance().getProcessID());
+        if (iqtrace_enabled) {
+            /* Issue phyz#3322: pos is CandidateSet::update's code: >= 0 a new
+             * topology was inserted, -1 the topology was already present, -2
+             * rejected (worse than the worst kept tree). "better" is exactly
+             * the condition that prints BETTER TREE FOUND. */
+            const bool improves = iqtrace_score > iqtrace_best_before;
+            iqtrace_out() << "{\"e\":\"iter\",\"it\":" << stop_rule.getCurIt()
+                          << ",\"logl\":" << iqtrace_num(iqtrace_score)
+                          << ",\"nni_steps\":" << nniInfos.first
+                          << ",\"nni_applied\":" << nniInfos.second
+                          << ",\"best_before\":" << iqtrace_num(iqtrace_best_before)
+                          << ",\"pos\":" << pos
+                          << ",\"admitted\":" << (pos >= 0 ? "true" : "false")
+                          << ",\"better\":" << (improves && pos != -1 ? "true" : "false")
+                          << ",\"update_best\":" << (improves && pos == -1 ? "true" : "false")
+                          << "}" << endl;
+        }
         if (pos != -2 && pos != -1 && (Params::getInstance().fixStableSplits || Params::getInstance().adaptPertubation))
             candidateTrees.computeSplitOccurences(Params::getInstance().stableSplitThreshold);
 
@@ -2902,23 +2935,58 @@ double IQTree::doTreePerturbation() {
         clearAllPartialLH();
         curScore = optimizeAllBranches();
     } else {
+        /* Issue phyz#3322: which candidate was perturbed, and how. */
+        string iqtrace_parent, iqtrace_perturb;
+        const char *iqtrace_kind = "iqp";
+        if (iqtrace_enabled) {
+            iqtrace_st.in_perturb = true;
+            iqtrace_st.perturb_nnis.clear();
+            iqtrace_st.perturb_attempts = 0;
+        }
         if (params->snni) {
             if (Params::getInstance().five_plus_five) {
-                readTreeString(candidateTrees.getNextCandTree());
+                iqtrace_parent = candidateTrees.getNextCandTree();
             } else {
-                readTreeString(candidateTrees.getRandTopTree(Params::getInstance().popSize));
+                iqtrace_parent = candidateTrees.getRandTopTree(Params::getInstance().popSize);
             }
+            readTreeString(iqtrace_parent);
             if (Params::getInstance().iqp) {
                 doIQP();
             } else if (Params::getInstance().adaptPertubation) {
+                iqtrace_kind = "stable_splits";
                 perturbStableSplits(Params::getInstance().stableSplitThreshold);
             } else {
+                iqtrace_kind = "random_nni";
                 doRandomNNIs(Params::getInstance().tabu);
             }
         } else {
             // Using the IQPNNI algorithm (best tree is selected)
-            readTreeString(getBestTrees()[0]);
+            iqtrace_parent = getBestTrees()[0];
+            readTreeString(iqtrace_parent);
             doIQP();
+        }
+        if (iqtrace_enabled) {
+            iqtrace_st.in_perturb = false;
+            /* parent_rank: 0 = best; -1 if the string is not in the set */
+            int rank = 0, parent_rank = -1;
+            double parent_score = 0.0;
+            for (CandidateSet::reverse_iterator it = candidateTrees.rbegin(); it != candidateTrees.rend(); it++, rank++)
+                if (it->second.tree == iqtrace_parent) {
+                    parent_rank = rank;
+                    parent_score = it->first;
+                    break;
+                }
+            ostringstream tr;
+            tr << "{\"e\":\"perturb\",\"it\":" << stop_rule.getCurIt() + 1
+               << ",\"kind\":\"" << iqtrace_kind << "\""
+               << ",\"parent_rank\":" << parent_rank
+               << ",\"parent_score\":" << (parent_rank >= 0 ? iqtrace_num(parent_score) : string("null"))
+               << ",\"random_nni_attempts\":" << iqtrace_st.perturb_attempts
+               << ",\"random_nnis\":[";
+            for (size_t i = 0; i < iqtrace_st.perturb_nnis.size(); i++)
+                tr << (i ? "," : "") << "[" << iqtrace_st.perturb_nnis[i] << "]";
+            tr << "]";
+            iqtrace_perturb = tr.str();
         }
         if (params->count_trees) {
             string perturb_tree_topo = getTopologyString(false);
@@ -2932,6 +3000,8 @@ double IQTree::doTreePerturbation() {
         }
         //optimizeBranches(1);
         curScore = computeLogL();
+        if (iqtrace_enabled)
+            iqtrace_out() << iqtrace_perturb << ",\"logl\":" << iqtrace_num(curScore) << "}\n";
     }
     return curScore;
 }
@@ -3064,6 +3134,27 @@ static ostream& i369_out() {
 /* Issue #2930: one cumulative emission of the EXISTING counters at the end of
  * the final model/branch-length optimisation, so the post-search reopt phase
  * is countable as ENDTOTALS minus the last in-search TOTALS. No new counter. */
+/* Issue phyz#3322: #2815's census names over the [I369] counters. #2815's
+ * lh_branch, lh_from_buffer, lh_derv, lh_full, bl_sweep_call, bl_sweep_iter,
+ * one_branch and nr_step count at the same sites as lk_branch, lk_frombuffer,
+ * lk_derv, lk_full, bl_all, bl_sweeps, bl_one and nr_iters; partial_lh and
+ * bl_recursive were the two it had that [I369] lacked. */
+void i369_emit_ops2815(const char *mark) {
+    if (!i369_on()) return;
+    i369_out() << "OPS2815 mark=" << mark
+               << " partial_lh=" << i369c.trav_partial
+               << " lh_branch=" << i369c.lk_branch
+               << " lh_from_buffer=" << i369c.lk_frombuffer
+               << " lh_derv=" << i369c.lk_derv
+               << " lh_full=" << i369c.lk_full
+               << " bl_sweep_call=" << i369c.bl_all
+               << " bl_sweep_iter=" << i369c.bl_sweeps
+               << " bl_recursive=" << i369c.bl_recursive
+               << " one_branch=" << i369c.bl_one
+               << " nr_step=" << i369c.nr_iters
+               << endl;
+}
+
 void i369_emit_end_totals() {
     if (!i369_on()) return;
     static const I369Counters zero = {};
@@ -3103,7 +3194,18 @@ pair<int, int> IQTree::optimizeNNI(bool speedNNI) {
         static const I369Counters zero = {};
         i369_emit_ops(i369_out(), "NNISTART", 0, zero);
     }
+    /* Issue phyz#3322: logl is curScore, which the caller's computeLogL() set
+     * (iqcap.py reads that call's return value). */
+    if (iqtrace_enabled) {
+        iqtrace_st.call++;
+        iqtrace_st.round = 0;
+        iqtrace_st.in_nni = true;
+        iqtrace_st.need_round = true;
+        iqtrace_out() << "{\"e\":\"nni_enter\",\"call\":" << iqtrace_st.call
+                      << ",\"logl\":" << iqtrace_num(curScore) << "}\n";
+    }
     for (numSteps = 1; numSteps <= MAXSTEPS; numSteps++) {
+        if (iqtrace_enabled) iqtrace_st.round = numSteps;
 
 //        cout << "numSteps = " << numSteps << endl;
         double oldScore = curScore;
@@ -3303,6 +3405,12 @@ pair<int, int> IQTree::optimizeNNI(bool speedNNI) {
              << " numSteps=" << numSteps
              << " MAXSTEPS=" << MAXSTEPS << endl;
 
+    if (iqtrace_enabled) {
+        iqtrace_st.in_nni = false;
+        iqtrace_out() << "{\"e\":\"nni_exit\",\"call\":" << iqtrace_st.call
+                      << ",\"steps\":" << numSteps << ",\"applied\":" << totalNNIApplied << "}"
+                      << endl;
+    }
     return make_pair(numSteps, totalNNIApplied);
 }
 
@@ -3468,7 +3576,27 @@ void IQTree::pllDestroyUFBootData(){
 }
 
 
+/* Issue phyz#3322: an NNIMove list as iqcap.py's read_moves() reads it. */
+static void iqtrace_moves(ostream &os, const vector<NNIMove> &moves) {
+    os << "[";
+    for (size_t i = 0; i < moves.size(); i++) {
+        const NNIMove &m = moves[i];
+        if (i) os << ",";
+        os << "{\"n1\":" << m.node1->id << ",\"n2\":" << m.node2->id
+           << ",\"swap1\":" << (*m.node1Nei_it)->node->id
+           << ",\"swap2\":" << (*m.node2Nei_it)->node->id
+           << ",\"lnl\":" << iqtrace_num(m.newloglh) << "}";
+    }
+    os << "]";
+}
+
 void IQTree::doNNIs(vector<NNIMove> &compatibleNNIs, bool changeBran) {
+    if (iqtrace_enabled && iqtrace_st.in_nni) {
+        iqtrace_out() << "{\"e\":\"doNNIs\",\"call\":" << iqtrace_st.call
+                      << ",\"round\":" << iqtrace_st.round << ",\"moves\":";
+        iqtrace_moves(iqtrace_out(), compatibleNNIs);
+        iqtrace_out() << "}\n";
+    }
     for (vector<NNIMove>::iterator it = compatibleNNIs.begin(); it != compatibleNNIs.end(); it++) {
         doNNI(*it);
         if (!params->leastSquareNNI && changeBran) {
@@ -3483,6 +3611,12 @@ void IQTree::doNNIs(vector<NNIMove> &compatibleNNIs, bool changeBran) {
 
 
 void IQTree::getCompatibleNNIs(vector<NNIMove> &nniMoves, vector<NNIMove> &compatibleNNIs) {
+    if (iqtrace_enabled && iqtrace_st.in_nni) {
+        iqtrace_out() << "{\"e\":\"compat\",\"call\":" << iqtrace_st.call
+                      << ",\"round\":" << iqtrace_st.round << ",\"sorted_pos\":";
+        iqtrace_moves(iqtrace_out(), nniMoves);
+        iqtrace_out() << "}\n";
+    }
     compatibleNNIs.clear();
     for (vector<NNIMove>::iterator it1 = nniMoves.begin(); it1 != nniMoves.end(); it1++) {
         bool select = true;

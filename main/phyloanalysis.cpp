@@ -2574,6 +2574,7 @@ void printFinalSearchInfo(Params &params, IQTree &iqtree, double search_cpu_time
     params.run_time = (getCPUTime() - params.startCPUTime);
     cout << endl;
     cout << "Total number of iterations: " << iqtree.stop_rule.getCurIt() << endl;
+    i369_emit_ops2815("total");   /* issue phyz#3322, ported from #2815 */
 //    cout << "Total number of partial likelihood vector computations: " << iqtree.num_partial_lh_computations << endl;
     cout << "CPU time used for tree search: " << search_cpu_time
             << " sec (" << convert_time(search_cpu_time) << ")" << endl;
@@ -3021,6 +3022,7 @@ void runTreeReconstruction(Params &params, IQTree* &iqtree) {
     //iqtree->saveCheckpoint();
     double cputime_search_start = getCPUTime();
     double realtime_search_start = getRealTime();
+    i369_emit_ops2815("search_start");   /* issue phyz#3322, ported from #2815 */
 
     if (params.leastSquareNNI) {
         iqtree->computeSubtreeDists();
@@ -3059,6 +3061,7 @@ void runTreeReconstruction(Params &params, IQTree* &iqtree) {
     restoreTaxa(*iqtree, saved_dist_mat, pruned_taxa, linked_name);
     double search_cpu_time = getCPUTime() - cputime_search_start;
     double search_real_time = getRealTime() - realtime_search_start;
+    i369_emit_ops2815("search_end");   /* issue phyz#3322, ported from #2815 */
 
     // COMMENT THIS OUT BECAUSE IT DELETES ALL BRANCH LENGTHS OF SUBTREES!
 //    if (iqtree.isSuperTree())

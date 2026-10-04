@@ -27,6 +27,48 @@
 
 I369Counters i369c = {};
 bool i369_enabled = (getenv("IQTREE_I369") != NULL);
+
+/* Issue phyz#3322: see iqtrace.h. */
+#include "iqtrace.h"
+#include <fstream>
+#include <cstdio>
+#include <cmath>
+bool iqtrace_enabled = (getenv("IQTREE_TRACE") != NULL);
+IqTraceState iqtrace_st = {};
+
+std::ostream &iqtrace_out() {
+    static std::ofstream f;
+    static bool tried = false;
+    if (!tried) {
+        tried = true;
+        const char *path = getenv("IQTREE_TRACE");
+        if (path) {
+            f.open(path, std::ios::out | std::ios::trunc);
+            f << "{\"e\":\"header\",\"format\":\"iqtrace\",\"version\":1}\n";
+        }
+    }
+    return f;
+}
+
+std::string iqtrace_num(double x) {
+    if (!std::isfinite(x)) return "null";
+    char buf[32];
+    snprintf(buf, sizeof(buf), "%.17g", x);
+    return buf;
+}
+
+std::string iqtrace_str(const std::string &s) {
+    std::string out = "\"";
+    for (char c : s) {
+        if (c == '"' || c == '\\') { out += '\\'; out += c; }
+        else if ((unsigned char) c < 0x20) {
+            char buf[8];
+            snprintf(buf, sizeof(buf), "\\u%04x", (unsigned char) c);
+            out += buf;
+        } else out += c;
+    }
+    return out + "\"";
+}
 #include "starttree.h" //for START_TREE_RECOGNIZED macro.
 #include "timeutil.h"
 #include "MPIHelper.h"

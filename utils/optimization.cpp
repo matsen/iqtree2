@@ -11,6 +11,28 @@
 //
 #include "optimization.h"
 #include "i369.h"
+/* Issue phyz#3322: see optimization.h. */
+#include <cmath>
+int g_nr_steps_2479 = 0;
+NrStopReason2479 g_nr_stop_reason_2479 = NR_STOP_2479_NOT_RUN;
+double g_nr_final_f_2479 = 0.0;
+bool g_nr_final_f_valid_2479 = false;
+const char* nrStopReason2479Name(NrStopReason2479 reason) {
+    switch (reason) {
+        case NR_STOP_2479_NOT_RUN: return "not_run";
+        case NR_STOP_2479_DERIVATIVE_TEST: return "derivative_test";
+        case NR_STOP_2479_BISECTION_COLLAPSED: return "bisection_collapsed";
+        case NR_STOP_2479_NEWTON_STALLED: return "newton_stalled";
+        case NR_STOP_2479_STEP_BELOW_TOLERANCE: return "step_below_tolerance";
+        case NR_STOP_2479_MAX_STEPS_EXHAUSTED: return "max_steps_exhausted";
+    }
+    return "unknown";
+}
+static inline void nr_2479_done(NrStopReason2479 reason, double f, bool f_valid) {
+    g_nr_stop_reason_2479 = reason;
+    g_nr_final_f_2479 = fabs(f);
+    g_nr_final_f_valid_2479 = f_valid;
+}
 #include <cmath>
 #include <stdio.h>
 #include <stdlib.h>
@@ -437,7 +459,10 @@ double Optimization::minimizeNewton(double x1, double xguess, double x2, double 
 	if (!isfinite(f) || !isfinite(df)) {
 		nrerror("Wrong computeFuncDerv");
 	}
-	if (df >= 0.0 && fabs(f) < xacc) { i369_nr_done(0, i369c.nr_exit_immediate); return rts; }
+	g_nr_steps_2479 = 0;
+	g_nr_stop_reason_2479 = NR_STOP_2479_NOT_RUN;
+	g_nr_final_f_valid_2479 = false;
+	if (df >= 0.0 && fabs(f) < xacc) { i369_nr_done(0, i369c.nr_exit_immediate); nr_2479_done(NR_STOP_2479_DERIVATIVE_TEST, f, true); return rts; }
 	if (f < 0.0) {
 		xl = rts;
 		xh = x2;
@@ -448,6 +473,7 @@ double Optimization::minimizeNewton(double x1, double xguess, double x2, double 
 
 	dx=dxold=fabs(xh-xl);
 	for (j=1;j<=maxNRStep;j++) {
+		g_nr_steps_2479 = j;
 		rts_old = rts;
 		if (
 			(df <= 0.0) // function is concave
@@ -459,18 +485,19 @@ double Optimization::minimizeNewton(double x1, double xguess, double x2, double 
 			dx=0.5*(xh-xl);
 			rts=xl+dx;
             d2l = df;
-			if (xl == rts) { i369_nr_done(j, i369c.nr_exit_bisect_collapse); return rts; }
+			if (xl == rts) { i369_nr_done(j, i369c.nr_exit_bisect_collapse); nr_2479_done(NR_STOP_2479_BISECTION_COLLAPSED, f, false); return rts; }
 		} else {
 			dxold=dx;
 			dx=f/df;
 			temp=rts;
 			rts -= dx;
 			d2l = df;
-			if (temp == rts) { i369_nr_done(j, i369c.nr_exit_step_collapse); return rts; }
+			if (temp == rts) { i369_nr_done(j, i369c.nr_exit_step_collapse); nr_2479_done(NR_STOP_2479_NEWTON_STALLED, f, true); return rts; }
 		}
 		if (fabs(dx) < xacc || (j == maxNRStep)) {
 			/* split the two conditions the shipped code conflates */
 			i369_nr_done(j, (fabs(dx) < xacc) ? i369c.nr_exit_dx : i369c.nr_exit_cap);
+			nr_2479_done((fabs(dx) < xacc) ? NR_STOP_2479_STEP_BELOW_TOLERANCE : NR_STOP_2479_MAX_STEPS_EXHAUSTED, f, true);
 //			if (fm > finit) {
 //				// happen in rare cases that it is worse than starting point: revert init value
 //				fm = computeFunction(xinit);
@@ -485,6 +512,7 @@ double Optimization::minimizeNewton(double x1, double xguess, double x2, double 
 		if (!isfinite(f) || !isfinite(df)) nrerror("Wrong computeFuncDerv");
 		if (df > 0.0 && fabs(f) < xacc) {
 			i369_nr_done(j, i369c.nr_exit_grad);
+			nr_2479_done(NR_STOP_2479_DERIVATIVE_TEST, f, true);
 			d2l = df;
 //			if (fm > finit) {
 //				// happen in rare cases that it is worse than starting point: revert init value

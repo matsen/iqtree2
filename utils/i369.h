@@ -49,6 +49,9 @@ struct I369Counters {
     unsigned long long inval_blanket_valid;  /* held a VALID partial -> swept in */
     unsigned long long inval_target_calls;
     unsigned long long inval_target_valid;
+    /* Issue phyz#3322: #2815's two census counters the set above lacked */
+    unsigned long long trav_partial;   /* traversal_info entries: partial-lh vectors to recompute */
+    unsigned long long bl_recursive;   /* recursive optimizeAllBranches(node, dad, ...) calls */
 };
 
 extern I369Counters i369c;
@@ -56,6 +59,10 @@ extern bool i369_enabled;
 
 /* Issue #2930: cumulative counters after the final model optimisation. */
 void i369_emit_end_totals();
+
+/* Issue phyz#3322: #2815's census line ("OPS2815 mark=<mark> ..."), cumulative,
+ * written to the IQTREE_I369 file instead of #2815's ungated cout. */
+void i369_emit_ops2815(const char *mark);
 
 /* record one completed Newton call: iteration count + which exit fired */
 inline void i369_nr_done(int iters, unsigned long long &reason) {

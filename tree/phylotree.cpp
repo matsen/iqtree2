@@ -21,6 +21,9 @@
  ***************************************************************************/
 #include "phylotree.h"
 #include "utils/i369.h"
+#include "utils/iqtrace.h"
+#include <memory>
+#include <set>
 #include "utils/starttree.h"
 #include "utils/progress.h"  //for progress_display
 //#include "rateheterogeneity.h"
@@ -1230,6 +1233,51 @@ Node *findFirstFarLeaf(Node *node, Node *dad = NULL) {
     } while (!node->isLeaf());
     return node;
     
+}
+
+/* Issue phyz#3322: whole-tree dumps for the trace (reads only). */
+static void iqtrace_collect(Node *start, vector<Node*> &nodes) {
+    vector<Node*> stack(1, start);
+    set<Node*> seen;
+    while (!stack.empty()) {
+        Node *x = stack.back();
+        stack.pop_back();
+        if (!seen.insert(x).second) continue;
+        nodes.push_back(x);
+        for (Neighbor *nb : x->neighbors)
+            if (!seen.count(nb->node)) stack.push_back(nb->node);
+    }
+}
+
+void iqtrace_dump_tree(ostream &os, Node *start) {
+    vector<Node*> nodes;
+    iqtrace_collect(start, nodes);
+    os << "{";
+    for (size_t i = 0; i < nodes.size(); i++) {
+        if (i) os << ",";
+        os << "\"" << nodes[i]->id << "\":[";
+        for (size_t k = 0; k < nodes[i]->neighbors.size(); k++) {
+            Neighbor *nb = nodes[i]->neighbors[k];
+            if (k) os << ",";
+            os << "[" << nb->node->id << "," << iqtrace_num(nb->length) << "]";
+        }
+        os << "]";
+    }
+    os << "}";
+}
+
+void iqtrace_dump_names(ostream &os, Node *start) {
+    vector<Node*> nodes;
+    iqtrace_collect(start, nodes);
+    os << "{";
+    bool first = true;
+    for (Node *x : nodes) {
+        if (x->neighbors.size() != 1) continue;
+        if (!first) os << ",";
+        first = false;
+        os << "\"" << x->id << "\":" << iqtrace_str(x->name);
+    }
+    os << "}";
 }
 
 double PhyloTree::computeLikelihood(double *pattern_lh, bool save_log_value) {
@@ -2594,8 +2642,24 @@ int PhyloTree::getNBranchParameters(int brlen_type) {
     return df;
 }
 
+/* Issue phyz#3322: one sweep visit, emitted on every return path. */
+struct IqTraceVisit {
+    Node *n1, *n2;
+    Neighbor *nb;
+    double len_in;
+    IqTraceVisit(Node *a, Node *b) : n1(a), n2(b), nb(a->findNeighbor(b)), len_in(nb->length) {}
+    ~IqTraceVisit() {
+        iqtrace_out() << "{\"e\":\"visit\",\"n1\":" << n1->id << ",\"n2\":" << n2->id
+                      << ",\"len_in\":" << iqtrace_num(len_in)
+                      << ",\"len_out\":" << iqtrace_num(nb->length) << "}\n";
+    }
+};
+
 void PhyloTree::optimizeOneBranch(PhyloNode *node1, PhyloNode *node2, bool clearLH, int maxNRStep) {
     if (i369_enabled) i369c.bl_one++;
+    std::unique_ptr<IqTraceVisit> iqtrace_visit;
+    if (iqtrace_enabled && iqtrace_st.in_opt)
+        iqtrace_visit.reset(new IqTraceVisit(node1, node2));
 
     if (rooted && (node1 == root || node2 == root))
         return; // does not optimize virtual branch from root
@@ -2677,6 +2741,7 @@ void PhyloTree::optimizeAllBranchesLS(PhyloNode *node, PhyloNode *dad) {
 }
 
 void PhyloTree::optimizeAllBranches(PhyloNode *node, PhyloNode *dad, int maxNRStep) {
+    if (i369_enabled) i369c.bl_recursive++;   /* #2815 bl_recursive */
     if (!node) {
         node = (PhyloNode*)root;
     }
@@ -2701,6 +2766,27 @@ void PhyloTree::computeBestTraversal(NodeVector &nodes, NodeVector &nodes2) {
 
 double PhyloTree::optimizeAllBranches(int my_iterations, double tolerance, int maxNRStep) {
     if (i369_enabled) i369c.bl_all++;
+    /* Issue phyz#3322: opt_enter/opt_exit around the sweeps optimizeNNI runs. */
+    const bool iqtrace_sweep = iqtrace_enabled && iqtrace_st.in_nni && !iqtrace_st.in_opt;
+    if (iqtrace_sweep) {
+        iqtrace_st.in_opt = true;
+        iqtrace_out() << "{\"e\":\"opt_enter\",\"call\":" << iqtrace_st.call
+                      << ",\"round\":" << iqtrace_st.round << ",\"tree\":";
+        iqtrace_dump_tree(iqtrace_out(), root);
+        iqtrace_out() << "}\n";
+    }
+    auto iqtrace_ret = [&](double lh) {
+        if (iqtrace_sweep) {
+            iqtrace_st.in_opt = false;
+            iqtrace_st.need_round = true;
+            iqtrace_out() << "{\"e\":\"opt_exit\",\"call\":" << iqtrace_st.call
+                          << ",\"round\":" << iqtrace_st.round
+                          << ",\"score\":" << iqtrace_num(lh) << ",\"tree\":";
+            iqtrace_dump_tree(iqtrace_out(), root);
+            iqtrace_out() << "}\n";
+        }
+        return lh;
+    };
     if (verbose_mode >= VB_MAX) {
         cout << "Optimizing branch lengths (max " << my_iterations << " loops)..." << endl;
     }
@@ -2764,19 +2850,19 @@ double PhyloTree::optimizeAllBranches(int my_iterations, double tolerance, int m
                 showProgress();
             }
             ASSERT(fabs(new_tree_lh-tree_lh) < max_delta_lh);
-            return new_tree_lh;
+            return iqtrace_ret(new_tree_lh);
         }
 
         // only return if the new_tree_lh >= tree_lh!
         // (in rare case that likelihood decreases, continue the loop)
         if (tree_lh <= new_tree_lh && new_tree_lh <= tree_lh + tolerance) {
             curScore = new_tree_lh;
-            return new_tree_lh;
+            return iqtrace_ret(new_tree_lh);
         }
         tree_lh = new_tree_lh;
     }
     curScore = tree_lh;
-    return tree_lh;
+    return iqtrace_ret(tree_lh);
 }
 
 int PhyloTree::getNDim() {
@@ -4221,6 +4307,14 @@ NNIMove PhyloTree::getBestNNIForBran(PhyloNode *node1, PhyloNode *node2, NNIMove
 
         int nni5_num_eval = max(params->nni5_num_eval, getMixlen());
 
+        /* Issue phyz#3322, ported from #2479: how many branch optimisations
+         * this candidate receives, and what the central one's Newton did. */
+        int branch_opt_count_2479 = 0;
+        int central_nr_steps_2479 = -1;
+        NrStopReason2479 central_nr_stop_reason_2479 = NR_STOP_2479_NOT_RUN;
+        double central_nr_final_f_2479 = 0.0;
+        bool central_nr_final_f_valid_2479 = false;
+
         for (int step = 0; step < nni5_num_eval; step++) {
 
 
@@ -4241,6 +4335,7 @@ NNIMove PhyloTree::getBestNNIForBran(PhyloNode *node1, PhyloNode *node2, NNIMove
             {
                 ((PhyloNeighbor*) (*it)->node->findNeighbor(node1))->clearPartialLh();
                 optimizeOneBranch(node1, (PhyloNode*) (*it)->node, false, NNI_MAX_NR_STEP);
+                branch_opt_count_2479++;
                 node1->findNeighbor((*it)->node)->getLength(nniMoves[cnt].newLen[i]);
                 i++;
             }
@@ -4248,6 +4343,11 @@ NNIMove PhyloTree::getBestNNIForBran(PhyloNode *node1, PhyloNode *node2, NNIMove
         }
 
         optimizeOneBranch(node1, node2, false, NNI_MAX_NR_STEP);
+        branch_opt_count_2479++;
+        central_nr_steps_2479 = g_nr_steps_2479;
+        central_nr_stop_reason_2479 = g_nr_stop_reason_2479;
+        central_nr_final_f_2479 = g_nr_final_f_2479;
+        central_nr_final_f_valid_2479 = g_nr_final_f_valid_2479;
         node1->findNeighbor(node2)->getLength(nniMoves[cnt].newLen[0]);
 
         if (params->nni5) {
@@ -4255,6 +4355,7 @@ NNIMove PhyloTree::getBestNNIForBran(PhyloNode *node1, PhyloNode *node2, NNIMove
             {
                 ((PhyloNeighbor*) (*it)->node->findNeighbor(node2))->clearPartialLh();
                 optimizeOneBranch(node2, (PhyloNode*) (*it)->node, false, NNI_MAX_NR_STEP);
+                branch_opt_count_2479++;
                 //node2_lastnei = (PhyloNeighbor*) (*it);
                 node2->findNeighbor((*it)->node)->getLength(nniMoves[cnt].newLen[i]);
                 i++;
@@ -4265,6 +4366,55 @@ NNIMove PhyloTree::getBestNNIForBran(PhyloNode *node1, PhyloNode *node2, NNIMove
         double score = computeLikelihoodFromBuffer();
         if (verbose_mode >= VB_DEBUG)
             cout << "NNI " << node1->id << " - " << node2->id << ": " << score << endl;
+        if (iqtrace_enabled) {
+            /* Issue phyz#3322: the per-candidate record (#2479's NNI2479
+             * line, keyed by node1's side of the swapped topology), which is
+             * also iqcap.py's "topo" event: a/b are node1's and node2's other
+             * neighbours after the swap. */
+            ostream &tr = iqtrace_out();
+            if (iqtrace_st.in_nni && iqtrace_st.need_round) {
+                iqtrace_st.need_round = false;
+                tr << "{\"e\":\"round_start\",\"call\":" << iqtrace_st.call
+                   << ",\"round\":" << iqtrace_st.round << ",\"tree\":";
+                iqtrace_dump_tree(tr, root);
+                tr << ",\"names\":";
+                iqtrace_dump_names(tr, root);
+                tr << "}\n";
+            }
+            vector<string> side_names;
+            getTaxaName(side_names, node1, node2);
+            vector<string> side;
+            for (const string &nm : side_names)
+                if (!nm.empty()) side.push_back(nm);
+            std::sort(side.begin(), side.end());
+            tr << "{\"e\":\"topo\",\"in_nni\":" << (iqtrace_st.in_nni ? "true" : "false")
+               << ",\"call\":" << iqtrace_st.call << ",\"round\":" << iqtrace_st.round
+               << ",\"n1\":" << node1->id << ",\"n2\":" << node2->id << ",\"k\":" << cnt
+               << ",\"a\":[";
+            bool first = true;
+            FOR_NEIGHBOR_IT(node1, node2, a_it) {
+                if (!first) tr << ",";
+                first = false;
+                tr << (*a_it)->node->id;
+            }
+            tr << "],\"b\":[";
+            first = true;
+            FOR_NEIGHBOR_IT(node2, node1, b_it) {
+                if (!first) tr << ",";
+                first = false;
+                tr << (*b_it)->node->id;
+            }
+            tr << "],\"score\":" << iqtrace_num(score) << ",\"split\":[";
+            for (size_t si = 0; si < side.size(); si++)
+                tr << (si ? "," : "") << iqtrace_str(side[si]);
+            tr << "],\"cnt\":" << cnt
+               << ",\"branch_opts\":" << branch_opt_count_2479
+               << ",\"central_nr_steps\":" << central_nr_steps_2479
+               << ",\"central_nr_stop_reason\":\"" << nrStopReason2479Name(central_nr_stop_reason_2479) << "\""
+               << ",\"central_nr_final_f\":"
+               << (central_nr_final_f_valid_2479 ? iqtrace_num(central_nr_final_f_2479) : string("null"))
+               << ",\"nr_max\":" << NNI_MAX_NR_STEP << "}\n";
+        }
         nniMoves[cnt].newloglh = score;
         // compute the pattern likelihoods if wanted
         if (nniMoves[cnt].ptnlh)
@@ -6032,6 +6182,7 @@ bool PhyloTree::computeTraversalInfo(PhyloNeighbor *dad_branch, PhyloNode *dad, 
         }
     }
     traversal_info.push_back(info);
+    if (i369_enabled) i369c.trav_partial++;   /* #2815 partial_lh: one vector to recompute */
     return mem_slots.lock(dad_branch);
 }
 

@@ -242,5 +242,26 @@ private:
 
 void nrerror(const char *error_text);
 
+/* Issue phyz#3322, ported from #2479/#2499 (phyz docs/ml/2479-phase1-n7/):
+ * what the most recent minimizeNewton(..., d2l, maxNRStep) call did. Read by
+ * the NNI candidate trace (iqtrace.h). Plain stores; no numeric effect. */
+extern int g_nr_steps_2479;
+enum NrStopReason2479 {
+    NR_STOP_2479_NOT_RUN = 0,
+    NR_STOP_2479_DERIVATIVE_TEST,
+    NR_STOP_2479_BISECTION_COLLAPSED,
+    NR_STOP_2479_NEWTON_STALLED,
+    NR_STOP_2479_STEP_BELOW_TOLERANCE,
+    NR_STOP_2479_MAX_STEPS_EXHAUSTED,
+};
+extern NrStopReason2479 g_nr_stop_reason_2479;
+const char* nrStopReason2479Name(NrStopReason2479 reason);
+/* |f| at the returned point. Not valid after a bisection collapse: there the
+ * last f belongs to the previous point, and #2479's patch re-evaluated it
+ * with an extra computeFuncDerv, which moves the counters and CLV state. This
+ * port does not, and the trace reports that case as null. */
+extern double g_nr_final_f_2479;
+extern bool g_nr_final_f_valid_2479;
+
 
 #endif
