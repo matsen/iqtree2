@@ -31,6 +31,7 @@
  *   pool         after each iter: the whole candidate set, best first, as the
  *                set holds it, and popSize (phyz#3327)
  *   taxa         once, before the first pool: taxon id -> name (phyz#3327)
+ * iter also carries "tree" (the post-search tree string the set was offered).
  * perturb also carries "parent" (the perturbed candidate's tree string) and
  * "random_nni_central" (each random NNI's split before the swap), phyz#3327.
  * nni_enter..nni_exit use the event names and fields of the gdb capture

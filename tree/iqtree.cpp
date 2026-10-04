@@ -681,7 +681,7 @@ void IQTree::computeInitialTree(LikelihoodKernel kernel, istream* in) {
  * tree). "better" is exactly the condition that prints BETTER TREE FOUND, and
  * "update_best" the one that prints UPDATE BEST LOG-LIKELIHOOD. */
 static void iqtrace_iter(const char *phase, int it, double score, pair<int, int> nni,
-                         double best_before, int pos) {
+                         double best_before, int pos, const string &tree) {
     const bool improves = score > best_before;
     iqtrace_out() << "{\"e\":\"iter\",\"phase\":\"" << phase << "\",\"it\":" << it
                   << ",\"logl\":" << iqtrace_num(score)
@@ -692,6 +692,7 @@ static void iqtrace_iter(const char *phase, int it, double score, pair<int, int>
                   << ",\"admitted\":" << (pos >= 0 ? "true" : "false")
                   << ",\"better\":" << (improves && pos != -1 ? "true" : "false")
                   << ",\"update_best\":" << (improves && pos == -1 ? "true" : "false")
+                  << ",\"tree\":" << iqtrace_str(tree)   /* phyz#3327 */
                   << "}" << endl;
 }
 
@@ -905,7 +906,7 @@ void IQTree::initCandidateTreeSet(int nParTrees, int nNNITrees) {
         int pos = addTreeToCandidateSet(treeString, curScore, true, MPIHelper::getInstance().getProcessID());
         if (iqtrace_enabled) {
             iqtrace_pool(this, "init", stop_rule.getCurIt());   /* Issue phyz#3327 */
-            iqtrace_iter("init", stop_rule.getCurIt(), iqtrace_score, nniInfos, iqtrace_best_before, pos);
+            iqtrace_iter("init", stop_rule.getCurIt(), iqtrace_score, nniInfos, iqtrace_best_before, pos, treeString);
         }
         if (Params::getInstance().writeDistImdTrees)
             intermediateTrees.update(treeString, curScore);
@@ -2377,7 +2378,7 @@ double IQTree::doTreeSearch() {
         int pos = addTreeToCandidateSet(curTree, curScore, true, MPIHelper::getInstance().getProcessID());
         if (iqtrace_enabled) {
             iqtrace_pool(this, "stochastic", stop_rule.getCurIt());   /* Issue phyz#3327 */
-            iqtrace_iter("stochastic", stop_rule.getCurIt(), iqtrace_score, nniInfos, iqtrace_best_before, pos);
+            iqtrace_iter("stochastic", stop_rule.getCurIt(), iqtrace_score, nniInfos, iqtrace_best_before, pos, curTree);
         }
         if (pos != -2 && pos != -1 && (Params::getInstance().fixStableSplits || Params::getInstance().adaptPertubation))
             candidateTrees.computeSplitOccurences(Params::getInstance().stableSplitThreshold);
