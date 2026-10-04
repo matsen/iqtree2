@@ -10,6 +10,8 @@
  * g_nr_final_f_valid_2479).
  *
  * Single-threaded: run traced builds at -T 1 (as the [I369] counters require).
+ * Lines are flushed at nni_exit and iter; an abort can lose the tail after the
+ * last of those. An unopenable IQTREE_TRACE path is a fatal error (exit 2).
  *
  * Event types ("e"):
  *   header       format/version
@@ -23,6 +25,7 @@
  *   opt_exit     its return value and the tree after it
  *   nni_exit     optimizeNNI returns: steps, applied
  *   perturb      one stochastic iteration's perturbation, with the lnL after it
+ *                (none under bootstrap-quartet perturbation, IQP_BOOTSTRAP)
  *   iter         one NNI-search iteration (phase "init": initCandidateTreeSet;
  *                "stochastic": doTreeSearch): post-search lnL and admission
  * nni_enter..nni_exit use the event names and fields of the gdb capture
@@ -37,6 +40,7 @@
 #include <vector>
 
 class Node;
+class MTree;
 
 struct IqTraceState {
     int call;          /* optimizeNNI calls so far (1-based once inside one) */
@@ -45,7 +49,7 @@ struct IqTraceState {
     bool need_round;   /* next candidate starts a round (iqcap.py's rule) */
     bool in_opt;       /* inside optimizeAllBranches(int,double,int) under in_nni */
     bool in_perturb;   /* inside IQTree::doTreePerturbation */
-    std::vector<std::string> perturb_nnis;  /* splits of random NNIs applied */
+    std::vector<std::string> perturb_nnis;  /* random NNIs applied, each a JSON split */
     int perturb_attempts;                   /* doRandomNNIs' cntNNI */
 };
 
@@ -55,14 +59,17 @@ extern IqTraceState iqtrace_st;
 /* The trace file (opened on first use, truncated). */
 std::ostream &iqtrace_out();
 
-/* JSON number: shortest round-trip form, null if not finite. */
+/* JSON number in %.17g (enough digits to round-trip a double), null if not finite. */
 std::string iqtrace_num(double x);
-/* JSON string with the characters taxon names can carry escaped. */
+/* JSON string: escapes quote, backslash and control characters; other bytes
+ * pass through, so a name that is not UTF-8 gives a line that is not JSON. */
 std::string iqtrace_str(const std::string &s);
 
 /* {"<id>": [[nbr_id, length], ...], ...} for the component holding `start`. */
 void iqtrace_dump_tree(std::ostream &os, Node *start);
 /* {"<id>": "<name>", ...} for the leaves of the component holding `start`. */
 void iqtrace_dump_names(std::ostream &os, Node *start);
+/* Sorted leaf names on a's side of edge (a, b), as a JSON array. */
+std::string iqtrace_split_json(MTree *tree, Node *a, Node *b);
 
 #endif

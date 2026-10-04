@@ -22,7 +22,6 @@
 #include "phylotree.h"
 #include "utils/i369.h"
 #include "utils/iqtrace.h"
-#include <memory>
 #include <set>
 #include "utils/starttree.h"
 #include "utils/progress.h"  //for progress_display
@@ -1264,6 +1263,18 @@ void iqtrace_dump_tree(ostream &os, Node *start) {
         os << "]";
     }
     os << "}";
+}
+
+string iqtrace_split_json(MTree *tree, Node *a, Node *b) {
+    vector<string> names, side;
+    tree->getTaxaName(names, a, b);
+    for (const string &nm : names)
+        if (!nm.empty()) side.push_back(nm);
+    std::sort(side.begin(), side.end());
+    string js = "[";
+    for (size_t i = 0; i < side.size(); i++)
+        js += (i ? "," : "") + iqtrace_str(side[i]);
+    return js + "]";
 }
 
 void iqtrace_dump_names(ostream &os, Node *start) {
@@ -2645,10 +2656,12 @@ int PhyloTree::getNBranchParameters(int brlen_type) {
 /* Issue phyz#3322: one sweep visit, emitted on every return path. */
 struct IqTraceVisit {
     Node *n1, *n2;
-    Neighbor *nb;
+    Neighbor *nb;   /* null when not tracing this call */
     double len_in;
-    IqTraceVisit(Node *a, Node *b) : n1(a), n2(b), nb(a->findNeighbor(b)), len_in(nb->length) {}
+    IqTraceVisit(Node *a, Node *b, bool on)
+        : n1(a), n2(b), nb(on ? a->findNeighbor(b) : nullptr), len_in(nb ? nb->length : 0.0) {}
     ~IqTraceVisit() {
+        if (!nb) return;
         iqtrace_out() << "{\"e\":\"visit\",\"n1\":" << n1->id << ",\"n2\":" << n2->id
                       << ",\"len_in\":" << iqtrace_num(len_in)
                       << ",\"len_out\":" << iqtrace_num(nb->length) << "}\n";
@@ -2657,9 +2670,7 @@ struct IqTraceVisit {
 
 void PhyloTree::optimizeOneBranch(PhyloNode *node1, PhyloNode *node2, bool clearLH, int maxNRStep) {
     if (i369_enabled) i369c.bl_one++;
-    std::unique_ptr<IqTraceVisit> iqtrace_visit;
-    if (iqtrace_enabled && iqtrace_st.in_opt)
-        iqtrace_visit.reset(new IqTraceVisit(node1, node2));
+    IqTraceVisit iqtrace_visit(node1, node2, iqtrace_enabled && iqtrace_st.in_opt);
 
     if (rooted && (node1 == root || node2 == root))
         return; // does not optimize virtual branch from root
@@ -4354,6 +4365,11 @@ NNIMove PhyloTree::getBestNNIForBran(PhyloNode *node1, PhyloNode *node2, NNIMove
             node21_it->clearPartialLh();
         }
 
+        /* reset, so a call that never reaches minimizeNewton (Brent, or the
+         * rooted early return) does not report the previous candidate's */
+        g_nr_steps_2479 = -1;
+        g_nr_stop_reason_2479 = NR_STOP_2479_NOT_RUN;
+        g_nr_final_f_valid_2479 = false;
         optimizeOneBranch(node1, node2, false, NNI_MAX_NR_STEP);
         branch_opt_count_2479++;
         central_nr_steps_2479 = g_nr_steps_2479;
@@ -4384,12 +4400,6 @@ NNIMove PhyloTree::getBestNNIForBran(PhyloNode *node1, PhyloNode *node2, NNIMove
              * also iqcap.py's "topo" event: a/b are node1's and node2's other
              * neighbours after the swap. */
             ostream &tr = iqtrace_out();
-            vector<string> side_names;
-            getTaxaName(side_names, node1, node2);
-            vector<string> side;
-            for (const string &nm : side_names)
-                if (!nm.empty()) side.push_back(nm);
-            std::sort(side.begin(), side.end());
             tr << "{\"e\":\"topo\",\"in_nni\":" << (iqtrace_st.in_nni ? "true" : "false")
                << ",\"call\":" << iqtrace_st.call << ",\"round\":" << iqtrace_st.round
                << ",\"n1\":" << node1->id << ",\"n2\":" << node2->id << ",\"k\":" << cnt
@@ -4407,10 +4417,9 @@ NNIMove PhyloTree::getBestNNIForBran(PhyloNode *node1, PhyloNode *node2, NNIMove
                 first = false;
                 tr << (*b_it)->node->id;
             }
-            tr << "],\"score\":" << iqtrace_num(score) << ",\"split\":[";
-            for (size_t si = 0; si < side.size(); si++)
-                tr << (si ? "," : "") << iqtrace_str(side[si]);
-            tr << "],\"cnt\":" << cnt
+            tr << "],\"score\":" << iqtrace_num(score)
+               << ",\"split\":" << iqtrace_split_json(this, node1, node2)
+               << ",\"cnt\":" << cnt
                << ",\"branch_opts\":" << branch_opt_count_2479
                << ",\"central_nr_steps\":" << central_nr_steps_2479
                << ",\"central_nr_stop_reason\":\"" << nrStopReason2479Name(central_nr_stop_reason_2479) << "\""

@@ -4,6 +4,7 @@ gzstream.cpp gzstream.h
 optimization.cpp optimization.h
 stoprule.cpp stoprule.h
 tools.cpp tools.h
+iqtrace.cpp iqtrace.h
 pllnni.cpp pllnni.h
 checkpoint.cpp checkpoint.h
 MPIHelper.cpp MPIHelper.h

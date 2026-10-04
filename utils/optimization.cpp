@@ -11,8 +11,14 @@
 //
 #include "optimization.h"
 #include "i369.h"
-/* Issue phyz#3322: see optimization.h. */
 #include <cmath>
+#include <stdio.h>
+#include <stdlib.h>
+#include <iostream>
+#include "lbfgsb/lbfgsb_new.h"
+#include "tools.h"
+
+/* Issue phyz#3322: see optimization.h. */
 int g_nr_steps_2479 = 0;
 NrStopReason2479 g_nr_stop_reason_2479 = NR_STOP_2479_NOT_RUN;
 double g_nr_final_f_2479 = 0.0;
@@ -33,12 +39,6 @@ static inline void nr_2479_done(NrStopReason2479 reason, double f, bool f_valid)
     g_nr_final_f_2479 = fabs(f);
     g_nr_final_f_valid_2479 = f_valid;
 }
-#include <cmath>
-#include <stdio.h>
-#include <stdlib.h>
-#include <iostream>
-#include "lbfgsb/lbfgsb_new.h"
-#include "tools.h"
 
 
 using namespace std;

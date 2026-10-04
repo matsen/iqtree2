@@ -1684,18 +1684,8 @@ string IQTree::doRandomNNIs(bool storeTabu) {
         if (constraintTree.isCompatible(randNNI)) {
             // only if random NNI satisfies constraintTree
             doNNI(randNNI);
-            if (iqtrace_enabled && iqtrace_st.in_perturb) {
-                /* Issue phyz#3322: node1's side of the new split */
-                vector<string> side_names, side;
-                getTaxaName(side_names, randNNI.node1, randNNI.node2);
-                for (const string &nm : side_names)
-                    if (!nm.empty()) side.push_back(nm);
-                std::sort(side.begin(), side.end());
-                string js;
-                for (size_t i = 0; i < side.size(); i++)
-                    js += (i ? "," : "") + iqtrace_str(side[i]);
-                iqtrace_st.perturb_nnis.push_back(js);
-            }
+            if (iqtrace_enabled && iqtrace_st.in_perturb)   /* Issue phyz#3322 */
+                iqtrace_st.perturb_nnis.push_back(iqtrace_split_json(this, randNNI.node1, randNNI.node2));
             if (storeTabu) {
                 Split *sp = getSplit(randNNI.node1, randNNI.node2);
                 Split *tabuSplit = new Split(*sp);
@@ -2993,7 +2983,7 @@ double IQTree::doTreePerturbation() {
                << ",\"random_nni_attempts\":" << iqtrace_st.perturb_attempts
                << ",\"random_nnis\":[";
             for (size_t i = 0; i < iqtrace_st.perturb_nnis.size(); i++)
-                tr << (i ? "," : "") << "[" << iqtrace_st.perturb_nnis[i] << "]";
+                tr << (i ? "," : "") << iqtrace_st.perturb_nnis[i];
             tr << "]";
             iqtrace_perturb = tr.str();
         }
@@ -3140,9 +3130,6 @@ static ostream& i369_out() {
     return f;
 }
 
-/* Issue #2930: one cumulative emission of the EXISTING counters at the end of
- * the final model/branch-length optimisation, so the post-search reopt phase
- * is countable as ENDTOTALS minus the last in-search TOTALS. No new counter. */
 /* Issue phyz#3322: #2815's census names over the [I369] counters. #2815's
  * lh_branch, lh_from_buffer, lh_derv, lh_full, bl_sweep_call, bl_sweep_iter,
  * one_branch and nr_step count at the same sites as lk_branch, lk_frombuffer,
@@ -3164,6 +3151,9 @@ void i369_emit_ops2815(const char *mark) {
                << endl;
 }
 
+/* Issue #2930: one cumulative emission of the EXISTING counters at the end of
+ * the final model/branch-length optimisation, so the post-search reopt phase
+ * is countable as ENDTOTALS minus the last in-search TOTALS. No new counter. */
 void i369_emit_end_totals() {
     if (!i369_on()) return;
     static const I369Counters zero = {};
