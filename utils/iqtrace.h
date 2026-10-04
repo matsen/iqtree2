@@ -28,6 +28,11 @@
  *                (none under bootstrap-quartet perturbation, IQP_BOOTSTRAP)
  *   iter         one NNI-search iteration (phase "init": initCandidateTreeSet;
  *                "stochastic": doTreeSearch): post-search lnL and admission
+ *   pool         after each iter: the candidate set's top popSize trees, best
+ *                first, as the set holds them (phyz#3327)
+ *   taxa         once, before the first pool: taxon id -> name (phyz#3327)
+ * perturb also carries "parent" (the perturbed candidate's tree string) and
+ * "random_nni_central" (each random NNI's split before the swap), phyz#3327.
  * nni_enter..nni_exit use the event names and fields of the gdb capture
  * (phyz experiments/2026-09-28-first-divergence-0474/scripts/iqcap.py), with
  * node ids in place of node pointers.
@@ -50,6 +55,7 @@ struct IqTraceState {
     bool in_opt;       /* inside optimizeAllBranches(int,double,int) under in_nni */
     bool in_perturb;   /* inside IQTree::doTreePerturbation */
     std::vector<std::string> perturb_nnis;  /* random NNIs applied, each a JSON split */
+    std::vector<std::string> perturb_central;  /* their central splits before the swap (phyz#3327) */
     int perturb_attempts;                   /* doRandomNNIs' cntNNI */
 };
 

@@ -695,6 +695,29 @@ static void iqtrace_iter(const char *phase, int it, double score, pair<int, int>
                   << "}" << endl;
 }
 
+/* Issue phyz#3327: the candidate set's top popSize trees (the pool a
+ * perturbation draws its parent from) after one iteration, best first, each
+ * as the set holds it. The first call also writes the taxon-id -> name map
+ * the tree strings need. */
+static void iqtrace_pool(IQTree *t, const char *phase, int it) {
+    static bool taxa_written = false;
+    if (!taxa_written) {
+        taxa_written = true;
+        iqtrace_out() << "{\"e\":\"taxa\",\"names\":[";
+        for (int i = 0; i < t->aln->getNSeq(); i++)
+            iqtrace_out() << (i ? "," : "") << iqtrace_str(t->aln->getSeqName(i));
+        iqtrace_out() << "]}\n";
+    }
+    iqtrace_out() << "{\"e\":\"pool\",\"phase\":\"" << phase << "\",\"it\":" << it
+                  << ",\"pop_size\":" << Params::getInstance().popSize << ",\"trees\":[";
+    int n = 0;
+    for (CandidateSet::reverse_iterator c = t->candidateTrees.rbegin();
+         c != t->candidateTrees.rend() && n < Params::getInstance().popSize; c++, n++)
+        iqtrace_out() << (n ? "," : "") << "{\"score\":" << iqtrace_num(c->first)
+                      << ",\"tree\":" << iqtrace_str(c->second.tree) << "}";
+    iqtrace_out() << "]}\n";
+}
+
 int IQTree::addTreeToCandidateSet(string treeString, double score, bool updateStopRule, int sourceProcID) {
     double curBestScore = candidateTrees.getBestScore();
     int pos = candidateTrees.update(treeString, score);
@@ -880,8 +903,10 @@ void IQTree::initCandidateTreeSet(int nParTrees, int nNNITrees) {
         const double iqtrace_best_before = candidateTrees.getBestScore();
         const double iqtrace_score = curScore;
         int pos = addTreeToCandidateSet(treeString, curScore, true, MPIHelper::getInstance().getProcessID());
-        if (iqtrace_enabled)
+        if (iqtrace_enabled) {
+            iqtrace_pool(this, "init", stop_rule.getCurIt());   /* Issue phyz#3327 */
             iqtrace_iter("init", stop_rule.getCurIt(), iqtrace_score, nniInfos, iqtrace_best_before, pos);
+        }
         if (Params::getInstance().writeDistImdTrees)
             intermediateTrees.update(treeString, curScore);
     }
@@ -1683,6 +1708,9 @@ string IQTree::doRandomNNIs(bool storeTabu) {
         NNIMove randNNI = getRandomNNI(vectorNNIBranches[randInt]);
         if (constraintTree.isCompatible(randNNI)) {
             // only if random NNI satisfies constraintTree
+            /* Issue phyz#3327: the central edge's split before the swap. */
+            if (iqtrace_enabled && iqtrace_st.in_perturb)
+                iqtrace_st.perturb_central.push_back(iqtrace_split_json(this, randNNI.node1, randNNI.node2));
             doNNI(randNNI);
             if (iqtrace_enabled && iqtrace_st.in_perturb)   /* Issue phyz#3322 */
                 iqtrace_st.perturb_nnis.push_back(iqtrace_split_json(this, randNNI.node1, randNNI.node2));
@@ -2347,8 +2375,10 @@ double IQTree::doTreeSearch() {
         const double iqtrace_best_before = candidateTrees.getBestScore();
         const double iqtrace_score = curScore;
         int pos = addTreeToCandidateSet(curTree, curScore, true, MPIHelper::getInstance().getProcessID());
-        if (iqtrace_enabled)
+        if (iqtrace_enabled) {
+            iqtrace_pool(this, "stochastic", stop_rule.getCurIt());   /* Issue phyz#3327 */
             iqtrace_iter("stochastic", stop_rule.getCurIt(), iqtrace_score, nniInfos, iqtrace_best_before, pos);
+        }
         if (pos != -2 && pos != -1 && (Params::getInstance().fixStableSplits || Params::getInstance().adaptPertubation))
             candidateTrees.computeSplitOccurences(Params::getInstance().stableSplitThreshold);
 
@@ -2940,6 +2970,7 @@ double IQTree::doTreePerturbation() {
         if (iqtrace_enabled) {
             iqtrace_st.in_perturb = true;
             iqtrace_st.perturb_nnis.clear();
+            iqtrace_st.perturb_central.clear();
             iqtrace_st.perturb_attempts = 0;
         }
         if (params->snni) {
@@ -2985,6 +3016,13 @@ double IQTree::doTreePerturbation() {
             for (size_t i = 0; i < iqtrace_st.perturb_nnis.size(); i++)
                 tr << (i ? "," : "") << iqtrace_st.perturb_nnis[i];
             tr << "]";
+            /* Issue phyz#3327: the central split of each random NNI (parallel
+             * to random_nnis), and the parent exactly as the candidate set
+             * holds it (taxon ids, the precision readTreeString read). */
+            tr << ",\"random_nni_central\":[";
+            for (size_t i = 0; i < iqtrace_st.perturb_central.size(); i++)
+                tr << (i ? "," : "") << iqtrace_st.perturb_central[i];
+            tr << "],\"parent\":" << iqtrace_str(iqtrace_parent);
             iqtrace_perturb = tr.str();
         }
         if (params->count_trees) {
