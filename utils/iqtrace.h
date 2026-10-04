@@ -28,8 +28,8 @@
  *                (none under bootstrap-quartet perturbation, IQP_BOOTSTRAP)
  *   iter         one NNI-search iteration (phase "init": initCandidateTreeSet;
  *                "stochastic": doTreeSearch): post-search lnL and admission
- *   pool         after each iter: the candidate set's top popSize trees, best
- *                first, as the set holds them (phyz#3327)
+ *   pool         after each iter: the whole candidate set, best first, as the
+ *                set holds it, and popSize (phyz#3327)
  *   taxa         once, before the first pool: taxon id -> name (phyz#3327)
  * perturb also carries "parent" (the perturbed candidate's tree string) and
  * "random_nni_central" (each random NNI's split before the swap), phyz#3327.

@@ -695,10 +695,10 @@ static void iqtrace_iter(const char *phase, int it, double score, pair<int, int>
                   << "}" << endl;
 }
 
-/* Issue phyz#3327: the candidate set's top popSize trees (the pool a
- * perturbation draws its parent from) after one iteration, best first, each
- * as the set holds it. The first call also writes the taxon-id -> name map
- * the tree strings need. */
+/* Issue phyz#3327: the whole candidate set after one iteration, best first,
+ * each tree as the set holds it. A perturbation draws its parent from the
+ * first pop_size; admission compares against all of them. The first call
+ * also writes the taxon-id -> name map the tree strings need. */
 static void iqtrace_pool(IQTree *t, const char *phase, int it) {
     static bool taxa_written = false;
     if (!taxa_written) {
@@ -712,7 +712,7 @@ static void iqtrace_pool(IQTree *t, const char *phase, int it) {
                   << ",\"pop_size\":" << Params::getInstance().popSize << ",\"trees\":[";
     int n = 0;
     for (CandidateSet::reverse_iterator c = t->candidateTrees.rbegin();
-         c != t->candidateTrees.rend() && n < Params::getInstance().popSize; c++, n++)
+         c != t->candidateTrees.rend(); c++, n++)
         iqtrace_out() << (n ? "," : "") << "{\"score\":" << iqtrace_num(c->first)
                       << ",\"tree\":" << iqtrace_str(c->second.tree) << "}";
     iqtrace_out() << "]}\n";
