@@ -22,8 +22,9 @@
  *   visit        one optimizeOneBranch inside that sweep: n1, n2, len_in, len_out
  *   opt_exit     its return value and the tree after it
  *   nni_exit     optimizeNNI returns: steps, applied
- *   perturb      one stochastic iteration's perturbation
- *   iter         one stochastic iteration's post-search lnL and admission
+ *   perturb      one stochastic iteration's perturbation, with the lnL after it
+ *   iter         one NNI-search iteration (phase "init": initCandidateTreeSet;
+ *                "stochastic": doTreeSearch): post-search lnL and admission
  * nni_enter..nni_exit use the event names and fields of the gdb capture
  * (phyz experiments/2026-09-28-first-divergence-0474/scripts/iqcap.py), with
  * node ids in place of node pointers.

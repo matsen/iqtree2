@@ -675,6 +675,26 @@ void IQTree::computeInitialTree(LikelihoodKernel kernel, istream* in) {
     }
 }
 
+/* Issue phyz#3322: one NNI-search iteration's admission into the candidate
+ * set. pos is CandidateSet::update's code: >= 0 a new topology was inserted,
+ * -1 the topology was already present, -2 rejected (worse than the worst kept
+ * tree). "better" is exactly the condition that prints BETTER TREE FOUND, and
+ * "update_best" the one that prints UPDATE BEST LOG-LIKELIHOOD. */
+static void iqtrace_iter(const char *phase, int it, double score, pair<int, int> nni,
+                         double best_before, int pos) {
+    const bool improves = score > best_before;
+    iqtrace_out() << "{\"e\":\"iter\",\"phase\":\"" << phase << "\",\"it\":" << it
+                  << ",\"logl\":" << iqtrace_num(score)
+                  << ",\"nni_steps\":" << nni.first
+                  << ",\"nni_applied\":" << nni.second
+                  << ",\"best_before\":" << iqtrace_num(best_before)
+                  << ",\"pos\":" << pos
+                  << ",\"admitted\":" << (pos >= 0 ? "true" : "false")
+                  << ",\"better\":" << (improves && pos != -1 ? "true" : "false")
+                  << ",\"update_best\":" << (improves && pos == -1 ? "true" : "false")
+                  << "}" << endl;
+}
+
 int IQTree::addTreeToCandidateSet(string treeString, double score, bool updateStopRule, int sourceProcID) {
     double curBestScore = candidateTrees.getBestScore();
     int pos = candidateTrees.update(treeString, score);
@@ -855,9 +875,13 @@ void IQTree::initCandidateTreeSet(int nParTrees, int nNNITrees) {
         readTreeString(*it);
 //        optimizeBranches();
 //        cout << "curScore: " << curScore << "  Tree before NNI: " << getTreeString() << endl;
-        doNNISearch();
+        pair<int, int> nniInfos = doNNISearch();
         string treeString = getTreeString();
-        addTreeToCandidateSet(treeString, curScore, true, MPIHelper::getInstance().getProcessID());
+        const double iqtrace_best_before = candidateTrees.getBestScore();
+        const double iqtrace_score = curScore;
+        int pos = addTreeToCandidateSet(treeString, curScore, true, MPIHelper::getInstance().getProcessID());
+        if (iqtrace_enabled)
+            iqtrace_iter("init", stop_rule.getCurIt(), iqtrace_score, nniInfos, iqtrace_best_before, pos);
         if (Params::getInstance().writeDistImdTrees)
             intermediateTrees.update(treeString, curScore);
     }
@@ -2333,23 +2357,8 @@ double IQTree::doTreeSearch() {
         const double iqtrace_best_before = candidateTrees.getBestScore();
         const double iqtrace_score = curScore;
         int pos = addTreeToCandidateSet(curTree, curScore, true, MPIHelper::getInstance().getProcessID());
-        if (iqtrace_enabled) {
-            /* Issue phyz#3322: pos is CandidateSet::update's code: >= 0 a new
-             * topology was inserted, -1 the topology was already present, -2
-             * rejected (worse than the worst kept tree). "better" is exactly
-             * the condition that prints BETTER TREE FOUND. */
-            const bool improves = iqtrace_score > iqtrace_best_before;
-            iqtrace_out() << "{\"e\":\"iter\",\"it\":" << stop_rule.getCurIt()
-                          << ",\"logl\":" << iqtrace_num(iqtrace_score)
-                          << ",\"nni_steps\":" << nniInfos.first
-                          << ",\"nni_applied\":" << nniInfos.second
-                          << ",\"best_before\":" << iqtrace_num(iqtrace_best_before)
-                          << ",\"pos\":" << pos
-                          << ",\"admitted\":" << (pos >= 0 ? "true" : "false")
-                          << ",\"better\":" << (improves && pos != -1 ? "true" : "false")
-                          << ",\"update_best\":" << (improves && pos == -1 ? "true" : "false")
-                          << "}" << endl;
-        }
+        if (iqtrace_enabled)
+            iqtrace_iter("stochastic", stop_rule.getCurIt(), iqtrace_score, nniInfos, iqtrace_best_before, pos);
         if (pos != -2 && pos != -1 && (Params::getInstance().fixStableSplits || Params::getInstance().adaptPertubation))
             candidateTrees.computeSplitOccurences(Params::getInstance().stableSplitThreshold);
 

@@ -4159,6 +4159,18 @@ void PhyloTree::changeNNIBrans(NNIMove &nnimove) {
 }
 
 NNIMove PhyloTree::getBestNNIForBran(PhyloNode *node1, PhyloNode *node2, NNIMove* nniMoves) {
+    if (iqtrace_enabled && iqtrace_st.in_nni && iqtrace_st.need_round) {
+        /* Issue phyz#3322: the tree a round's candidates are scored against,
+         * dumped before the first candidate's swap (as iqcap.py does). */
+        iqtrace_st.need_round = false;
+        ostream &tr = iqtrace_out();
+        tr << "{\"e\":\"round_start\",\"call\":" << iqtrace_st.call
+           << ",\"round\":" << iqtrace_st.round << ",\"tree\":";
+        iqtrace_dump_tree(tr, root);
+        tr << ",\"names\":";
+        iqtrace_dump_names(tr, root);
+        tr << "}\n";
+    }
 
     ASSERT(!node1->isLeaf() && !node2->isLeaf());
     ASSERT(node1->degree() == 3 && node2->degree() == 3);
@@ -4372,15 +4384,6 @@ NNIMove PhyloTree::getBestNNIForBran(PhyloNode *node1, PhyloNode *node2, NNIMove
              * also iqcap.py's "topo" event: a/b are node1's and node2's other
              * neighbours after the swap. */
             ostream &tr = iqtrace_out();
-            if (iqtrace_st.in_nni && iqtrace_st.need_round) {
-                iqtrace_st.need_round = false;
-                tr << "{\"e\":\"round_start\",\"call\":" << iqtrace_st.call
-                   << ",\"round\":" << iqtrace_st.round << ",\"tree\":";
-                iqtrace_dump_tree(tr, root);
-                tr << ",\"names\":";
-                iqtrace_dump_names(tr, root);
-                tr << "}\n";
-            }
             vector<string> side_names;
             getTaxaName(side_names, node1, node2);
             vector<string> side;
