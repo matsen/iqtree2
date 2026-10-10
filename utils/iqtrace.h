@@ -18,6 +18,12 @@
  *   nni_enter    one IQTree::optimizeNNI call starts: call, logl (= curScore)
  *   round_start  first candidate of a round: call, round, tree (whole-tree dump)
  *   topo         one scored NNI candidate (the NNI2479 fields, plus call/round)
+ *                and, phyz#3515, the lengths its fits start from and end on:
+ *                start_len/fit_len (central branch; fit_len = newLen[0][0]) and
+ *                outer_start_len/outer_fit_len (node1's then node2's other
+ *                neighbours after the swap, newLen[1..4]'s order). Read on the
+ *                working Neighbor copies, so k = 1's start shows what k = 0
+ *                left there. Under -nni1 no outer branch is fitted.
  *   compat       the sorted positive NNIs passed to getCompatibleNNIs
  *   doNNIs       one doNNIs batch (applied, reverted, or the fallback single)
  *   opt_enter    optimizeAllBranches(int,double,int) entry: tree

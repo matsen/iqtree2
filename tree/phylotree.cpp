@@ -4338,6 +4338,19 @@ NNIMove PhyloTree::getBestNNIForBran(PhyloNode *node1, PhyloNode *node2, NNIMove
         double central_nr_final_f_2479 = 0.0;
         bool central_nr_final_f_valid_2479 = false;
 
+        /* Issue phyz#3515: the lengths this candidate's fits start from,
+         * read after the swap and before any fit: the central branch, then
+         * node1's and node2's other neighbours (newLen[1..4]'s order). On
+         * k = 1 they show what k = 0's fits left on the working copies. */
+        double start_len_3515 = 0.0;
+        double outer_start_3515[4];
+        if (iqtrace_enabled) {
+            int o = 0;
+            start_len_3515 = node12_it->length;
+            FOR_NEIGHBOR(node1, node2, it) outer_start_3515[o++] = (*it)->length;
+            FOR_NEIGHBOR(node2, node1, it) outer_start_3515[o++] = (*it)->length;
+        }
+
         for (int step = 0; step < nni5_num_eval; step++) {
 
 
@@ -4425,7 +4438,22 @@ NNIMove PhyloTree::getBestNNIForBran(PhyloNode *node1, PhyloNode *node2, NNIMove
                << ",\"central_nr_stop_reason\":\"" << nrStopReason2479Name(central_nr_stop_reason_2479) << "\""
                << ",\"central_nr_final_f\":"
                << (central_nr_final_f_valid_2479 ? iqtrace_num(central_nr_final_f_2479) : string("null"))
-               << ",\"nr_max\":" << NNI_MAX_NR_STEP << "}\n";
+               << ",\"nr_max\":" << NNI_MAX_NR_STEP;
+            /* Issue phyz#3515: start and fitted lengths. fit_len is
+             * newLen[0][0] (null if empty); an outer branch's fitted length is read from its
+             * neighbour after the fits (newLen[i] under -nni5; under -nni1
+             * no outer branch is fitted, so it equals its start). */
+            double outer_fit_3515[4];
+            int o = 0;
+            FOR_NEIGHBOR(node1, node2, it) outer_fit_3515[o++] = (*it)->length;
+            FOR_NEIGHBOR(node2, node1, it) outer_fit_3515[o++] = (*it)->length;
+            tr << ",\"start_len\":" << iqtrace_num(start_len_3515)
+               << ",\"fit_len\":" << iqtrace_num(nniMoves[cnt].newLen[0].empty() ? NAN : nniMoves[cnt].newLen[0][0])
+               << ",\"outer_start_len\":[";
+            for (o = 0; o < 4; o++) tr << (o ? "," : "") << iqtrace_num(outer_start_3515[o]);
+            tr << "],\"outer_fit_len\":[";
+            for (o = 0; o < 4; o++) tr << (o ? "," : "") << iqtrace_num(outer_fit_3515[o]);
+            tr << "]}\n";
         }
         nniMoves[cnt].newloglh = score;
         // compute the pattern likelihoods if wanted
